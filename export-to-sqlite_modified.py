@@ -1,46 +1,11 @@
-# export-to-sqlite.py: export perf data to a sqlite3 database
-# Copyright (c) 2017, Intel Corporation.
-#
-# This program is free software; you can redistribute it and/or modify it
-# under the terms and conditions of the GNU General Public License,
-# version 2, as published by the Free Software Foundation.
-#
-# This program is distributed in the hope it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-# more details.
-
 from __future__ import print_function
 
 import os
 import sys
 import struct
+import sqlite3
 import datetime
 
-# To use this script you will need to have installed package python-pyside which
-# provides LGPL-licensed Python bindings for Qt.  You will also need the package
-# libqt4-sql-sqlite for Qt sqlite3 support.
-#
-# Examples of installing pyside:
-#
-# ubuntu:
-#
-# 	$ sudo apt-get install python-pyside.qtsql libqt4-sql-psql
-#
-# 	Alternately, to use Python3 and/or pyside 2, one of the following:
-#
-# 		$ sudo apt-get install python3-pyside.qtsql libqt4-sql-psql
-# 		$ sudo apt-get install python-pyside2.qtsql libqt5sql5-psql
-# 		$ sudo apt-get install python3-pyside2.qtsql libqt5sql5-psql
-# fedora:
-#
-# 	$ sudo yum install python-pyside
-#
-# 	Alternately, to use Python3 and/or pyside 2, one of the following:
-# 		$ sudo yum install python3-pyside
-# 		$ pip install --user PySide2
-# 		$ pip3 install --user PySide2
-#
 # An example of using this script with Intel PT:
 #
 # 	$ perf record -e intel_pt//u ls
@@ -69,25 +34,25 @@ import datetime
 # difference is  the 'transaction' column of the 'samples' table which is
 # renamed 'transaction_' in sqlite because 'transaction' is a reserved word.
 
+"""
 pyside_version_1 = True
 if not "pyside-version-1" in sys.argv:
-    try:
-        from PySide2.QtSql import *
-
-        pyside_version_1 = False
-    except:
-        pass
+	try:
+		from PySide2.QtSql import *
+		pyside_version_1 = False
+	except:
+		pass
 
 if pyside_version_1:
-    from PySide.QtSql import *
+	from PySide.QtSql import *
 
-sys.path.append(
-    os.environ["PERF_EXEC_PATH"] + "/scripts/python/Perf-Trace-Util/lib/Perf/Trace"
-)
+sys.path.append(os.environ['PERF_EXEC_PATH'] + \
+	'/scripts/python/Perf-Trace-Util/lib/Perf/Trace')
 
 # These perf imports are not used at present
-# from perf_trace_context import *
-# from Core import *
+#from perf_trace_context import *
+#from Core import *
+"""
 
 perf_db_export_mode = True
 perf_db_export_calls = False
@@ -139,16 +104,18 @@ for i in range(3, len(sys.argv)):
         usage()
 
 
-def do_query(q, s):
-    if q.exec_(s):
-        return
-    raise Exception("Query failed: " + q.lastError().text())
+def do_query(cursor, query, params=()):
+    try:
+        cursor.execute(query, params)
+    except sqlite3.Error as e:
+        raise Exception(f"Query failed: {e}")
 
 
-def do_query_(q):
-    if q.exec_():
-        return
-    raise Exception("Query failed: " + q.lastError().text())
+def do_query_(cursor, query, params=()):
+    try:
+        cursor.execute(query, params)
+    except sqlite3.Error as e:
+        raise Exception(f"Query failed: {e}")
 
 
 printdate("Creating database ...")
@@ -164,30 +131,27 @@ except:
 if db_exists:
     raise Exception(dbname + " already exists")
 
-db = QSqlDatabase.addDatabase("QSQLITE")
-db.setDatabaseName(dbname)
-db.open()
+conn = sqlite3.connect(dbname)
+cursor = conn.cursor()
 
-query = QSqlQuery(db)
-
-do_query(query, "PRAGMA journal_mode = OFF")
-do_query(query, "BEGIN TRANSACTION")
+do_query(cursor, "PRAGMA journal_mode = OFF")
+do_query(cursor, "BEGIN TRANSACTION")
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE selected_events ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "name		varchar(80))",
 )
 do_query(
-    query,
+    cursor,
     "CREATE TABLE machines ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "pid		integer,"
     "root_dir 	varchar(4096))",
 )
 do_query(
-    query,
+    cursor,
     "CREATE TABLE threads ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "machine_id	bigint,"
@@ -196,7 +160,7 @@ do_query(
     "tid		integer)",
 )
 do_query(
-    query,
+    cursor,
     "CREATE TABLE comms ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "comm		varchar(16),"
@@ -205,14 +169,14 @@ do_query(
     "exec_flag	boolean)",
 )
 do_query(
-    query,
+    cursor,
     "CREATE TABLE comm_threads ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "comm_id	bigint,"
     "thread_id	bigint)",
 )
 do_query(
-    query,
+    cursor,
     "CREATE TABLE dsos ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "machine_id	bigint,"
@@ -221,7 +185,7 @@ do_query(
     "build_id	varchar(64))",
 )
 do_query(
-    query,
+    cursor,
     "CREATE TABLE symbols ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "dso_id		bigint,"
@@ -231,7 +195,7 @@ do_query(
     "name		varchar(2048))",
 )
 do_query(
-    query,
+    cursor,
     "CREATE TABLE branch_types ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "name		varchar(80))",
@@ -239,7 +203,7 @@ do_query(
 
 if branches:
     do_query(
-        query,
+        cursor,
         "CREATE TABLE samples ("
         "id		integer		NOT NULL	PRIMARY KEY,"
         "evsel_id	bigint,"
@@ -265,7 +229,7 @@ if branches:
     )
 else:
     do_query(
-        query,
+        cursor,
         "CREATE TABLE samples ("
         "id		integer		NOT NULL	PRIMARY KEY,"
         "evsel_id	bigint,"
@@ -296,7 +260,7 @@ else:
 
 if perf_db_export_calls or perf_db_export_callchains:
     do_query(
-        query,
+        cursor,
         "CREATE TABLE call_paths ("
         "id		integer		NOT NULL	PRIMARY KEY,"
         "parent_id	bigint,"
@@ -305,7 +269,7 @@ if perf_db_export_calls or perf_db_export_callchains:
     )
 if perf_db_export_calls:
     do_query(
-        query,
+        cursor,
         "CREATE TABLE calls ("
         "id		integer		NOT NULL	PRIMARY KEY,"
         "thread_id	bigint,"
@@ -324,7 +288,7 @@ if perf_db_export_calls:
     )
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE ptwrite ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "payload	bigint,"
@@ -332,7 +296,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE cbr ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "cbr		integer,"
@@ -341,7 +305,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE mwait ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "hints		integer,"
@@ -349,7 +313,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE pwre ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "cstate		integer,"
@@ -358,12 +322,12 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE exstop (" "id		integer		NOT NULL	PRIMARY KEY," "exact_ip	integer)",
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE pwrx ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "deepest_cstate	integer,"
@@ -372,7 +336,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE TABLE context_switches ("
     "id		integer		NOT NULL	PRIMARY KEY,"
     "machine_id	bigint,"
@@ -388,21 +352,21 @@ do_query(
 # printf was added to sqlite in version 3.8.3
 sqlite_has_printf = False
 try:
-    do_query(query, 'SELECT printf("") FROM machines')
+    do_query(cursor, 'SELECT printf("") FROM machines')
     sqlite_has_printf = True
-except:
+except sqlite3.Error:
     pass
 
 
 def emit_to_hex(x):
-    if sqlite_has_printf:
-        return 'printf("%x", ' + x + ")"
-    else:
-        return x
+    # if sqlite_has_printf:
+    #     return 'printf("%x", ' + x + ")"
+    # else:
+    return x
 
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW machines_view AS "
     "SELECT "
     "id,"
@@ -413,7 +377,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW dsos_view AS "
     "SELECT "
     "id,"
@@ -426,7 +390,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW symbols_view AS "
     "SELECT "
     "id,"
@@ -440,7 +404,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW threads_view AS "
     "SELECT "
     "id,"
@@ -453,7 +417,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW comm_threads_view AS "
     "SELECT "
     "comm_id,"
@@ -466,7 +430,7 @@ do_query(
 
 if perf_db_export_calls or perf_db_export_callchains:
     do_query(
-        query,
+        cursor,
         "CREATE VIEW call_paths_view AS "
         "SELECT "
         "c.id," + emit_to_hex("c.ip") + " AS ip,"
@@ -483,7 +447,7 @@ if perf_db_export_calls or perf_db_export_callchains:
     )
 if perf_db_export_calls:
     do_query(
-        query,
+        cursor,
         "CREATE VIEW calls_view AS "
         "SELECT "
         "calls.id,"
@@ -510,7 +474,7 @@ if perf_db_export_calls:
     )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW samples_view AS "
     "SELECT "
     "id,"
@@ -540,7 +504,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW ptwrite_view AS "
     "SELECT "
     "ptwrite.id,"
@@ -552,7 +516,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW cbr_view AS "
     "SELECT "
     "cbr.id,"
@@ -566,7 +530,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW mwait_view AS "
     "SELECT "
     "mwait.id,"
@@ -581,7 +545,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW pwre_view AS "
     "SELECT "
     "pwre.id,"
@@ -595,7 +559,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW exstop_view AS "
     "SELECT "
     "exstop.id,"
@@ -607,7 +571,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW pwrx_view AS "
     "SELECT "
     "pwrx.id,"
@@ -626,7 +590,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW power_events_view AS "
     "SELECT "
     "samples.id,"
@@ -662,7 +626,7 @@ do_query(
 )
 
 do_query(
-    query,
+    cursor,
     "CREATE VIEW context_switches_view AS "
     "SELECT "
     "context_switches.id,"
@@ -687,102 +651,110 @@ do_query(
     " INNER JOIN comms AS comm_in  ON comm_in.id  = context_switches.comm_in_id",
 )
 
-do_query(query, "END TRANSACTION")
+do_query(cursor, "END TRANSACTION")
+conn.commit()
 
-evsel_query = QSqlQuery(db)
-evsel_query.prepare("INSERT INTO selected_events VALUES (?, ?)")
-machine_query = QSqlQuery(db)
-machine_query.prepare("INSERT INTO machines VALUES (?, ?, ?)")
-thread_query = QSqlQuery(db)
-thread_query.prepare("INSERT INTO threads VALUES (?, ?, ?, ?, ?)")
-comm_query = QSqlQuery(db)
-comm_query.prepare("INSERT INTO comms VALUES (?, ?, ?, ?, ?)")
-comm_thread_query = QSqlQuery(db)
-comm_thread_query.prepare("INSERT INTO comm_threads VALUES (?, ?, ?)")
-dso_query = QSqlQuery(db)
-dso_query.prepare("INSERT INTO dsos VALUES (?, ?, ?, ?, ?)")
-symbol_query = QSqlQuery(db)
-symbol_query.prepare("INSERT INTO symbols VALUES (?, ?, ?, ?, ?, ?)")
-branch_type_query = QSqlQuery(db)
-branch_type_query.prepare("INSERT INTO branch_types VALUES (?, ?)")
-sample_query = QSqlQuery(db)
-if branches:
-    sample_query.prepare(
-        "INSERT INTO samples VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
+printdate("Database setup completed.")
+
+
+# 插入数据函数
+def insert_selected_events(cursor, values):
+    cursor.execute("INSERT INTO selected_events VALUES (?, ?)", values)
+
+
+def insert_machines(cursor, values):
+    cursor.execute("INSERT INTO machines VALUES (?, ?, ?)", values)
+
+
+def insert_threads(cursor, values):
+    cursor.execute("INSERT INTO threads VALUES (?, ?, ?, ?, ?)", values)
+
+
+def insert_comms(cursor, values):
+    cursor.execute("INSERT INTO comms VALUES (?, ?, ?, ?, ?)", values)
+
+
+def insert_comm_threads(cursor, values):
+    cursor.execute("INSERT INTO comm_threads VALUES (?, ?, ?)", values)
+
+
+def insert_dsos(cursor, values):
+    cursor.execute("INSERT INTO dsos VALUES (?, ?, ?, ?, ?)", values)
+
+
+def insert_symbols(cursor, values):
+    cursor.execute("INSERT INTO symbols VALUES (?, ?, ?, ?, ?, ?)", values)
+
+
+def insert_branch_types(cursor, values):
+    cursor.execute("INSERT INTO branch_types VALUES (?, ?)", values)
+
+
+def insert_samples(cursor, values):
+    if branches:
+        cursor.execute(
+            "INSERT INTO samples VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            values,
+        )
+    else:
+        cursor.execute(
+            "INSERT INTO samples VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            values,
+        )
+
+
+def insert_call_paths(cursor, values):
+    cursor.execute("INSERT INTO call_paths VALUES (?, ?, ?, ?)", values)
+
+
+def insert_calls(cursor, values):
+    cursor.execute(
+        "INSERT INTO calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values
     )
-else:
-    sample_query.prepare(
-        "INSERT INTO samples VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    )
-if perf_db_export_calls or perf_db_export_callchains:
-    call_path_query = QSqlQuery(db)
-    call_path_query.prepare("INSERT INTO call_paths VALUES (?, ?, ?, ?)")
-if perf_db_export_calls:
-    call_query = QSqlQuery(db)
-    call_query.prepare(
-        "INSERT INTO calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    )
-ptwrite_query = QSqlQuery(db)
-ptwrite_query.prepare("INSERT INTO ptwrite VALUES (?, ?, ?)")
-cbr_query = QSqlQuery(db)
-cbr_query.prepare("INSERT INTO cbr VALUES (?, ?, ?, ?)")
-mwait_query = QSqlQuery(db)
-mwait_query.prepare("INSERT INTO mwait VALUES (?, ?, ?)")
-pwre_query = QSqlQuery(db)
-pwre_query.prepare("INSERT INTO pwre VALUES (?, ?, ?, ?)")
-exstop_query = QSqlQuery(db)
-exstop_query.prepare("INSERT INTO exstop VALUES (?, ?)")
-pwrx_query = QSqlQuery(db)
-pwrx_query.prepare("INSERT INTO pwrx VALUES (?, ?, ?, ?)")
-context_switch_query = QSqlQuery(db)
-context_switch_query.prepare(
-    "INSERT INTO context_switches VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-)
 
 
 def trace_begin():
     printdate("Writing records...")
-    do_query(query, "BEGIN TRANSACTION")
-    # id == 0 means unknown.  It is easier to create records for them than replace the zeroes with NULLs
-    evsel_table(0, "unknown")
-    machine_table(0, 0, "unknown")
-    thread_table(0, 0, 0, -1, -1)
-    comm_table(0, "unknown", 0, 0, 0)
-    dso_table(0, 0, "unknown", "unknown", "")
-    symbol_table(0, 0, 0, 0, 0, "unknown")
-    sample_table(
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    )
+    do_query(cursor, "BEGIN TRANSACTION")
+
+    # 插入初始数据
+    insert_selected_events(cursor, (0, "unknown"))
+    insert_machines(cursor, (0, 0, "unknown"))
+    insert_threads(cursor, (0, 0, 0, -1, -1))
+    insert_comms(cursor, (0, "unknown", 0, 0, 0))
+    insert_dsos(cursor, (0, 0, "unknown", "unknown", ""))
+    insert_symbols(cursor, (0, 0, 0, 0, 0, "unknown"))
+
+    if branches:
+        insert_samples(
+            cursor, (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        )
+    else:
+        insert_samples(
+            cursor,
+            (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        )
+
     if perf_db_export_calls or perf_db_export_callchains:
-        call_path_table(0, 0, 0, 0)
-        call_return_table(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        insert_call_paths(cursor, (0, 0, 0, 0))
+        insert_calls(cursor, (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
 
 unhandled_count = 0
 
 
-def is_table_empty(table_name):
-    do_query(query, "SELECT * FROM " + table_name + " LIMIT 1")
-    if query.next():
-        return False
-    return True
-
-
-def drop(table_name):
-    do_query(query, "DROP VIEW " + table_name + "_view")
-    do_query(query, "DROP TABLE " + table_name)
-
-
 def trace_end():
-    do_query(query, "END TRANSACTION")
+    do_query(cursor, "END TRANSACTION")
+    conn.commit()
 
     printdate("Adding indexes")
     if perf_db_export_calls:
-        do_query(query, "CREATE INDEX pcpid_idx ON calls (parent_call_path_id)")
-        do_query(query, "CREATE INDEX pid_idx ON calls (parent_id)")
-        do_query(query, "ALTER TABLE comms ADD has_calls boolean")
+        do_query(cursor, "CREATE INDEX pcpid_idx ON calls (parent_call_path_id)")
+        do_query(cursor, "CREATE INDEX pid_idx ON calls (parent_id)")
+        do_query(cursor, "ALTER TABLE comms ADD COLUMN has_calls boolean")
         do_query(
-            query,
+            cursor,
             "UPDATE comms SET has_calls = 1 WHERE comms.id IN (SELECT DISTINCT comm_id FROM calls)",
         )
 
@@ -795,7 +767,7 @@ def trace_end():
         and is_table_empty("exstop")
         and is_table_empty("pwrx")
     ):
-        do_query(query, "DROP VIEW power_events_view")
+        do_query(cursor, "DROP VIEW power_events_view")
         drop("mwait")
         drop("pwre")
         drop("exstop")
@@ -810,6 +782,18 @@ def trace_end():
     printdate("Done")
 
 
+def is_table_empty(table_name):
+    do_query(cursor, f"SELECT * FROM {table_name} LIMIT 1")
+    if cursor.fetchone():
+        return False
+    return True
+
+
+def drop(table_name):
+    do_query(cursor, f"DROP VIEW IF EXISTS {table_name}_view")
+    do_query(cursor, f"DROP TABLE IF EXISTS {table_name}")
+
+
 def trace_unhandled(event_name, context, event_fields_dict):
     global unhandled_count
     unhandled_count += 1
@@ -819,61 +803,65 @@ def sched__sched_switch(*x):
     pass
 
 
-def bind_exec(q, n, x):
-    for xx in x[0:n]:
-        q.addBindValue(str(xx))
-    do_query_(q)
+def bind_exec(cursor, query, values):
+    cursor.execute(query, values)
 
 
 def evsel_table(*x):
-    bind_exec(evsel_query, 2, x)
+    bind_exec(cursor, "INSERT INTO selected_events VALUES (?, ?)", x)
 
 
 def machine_table(*x):
-    bind_exec(machine_query, 3, x)
+    bind_exec(cursor, "INSERT INTO machines VALUES (?, ?, ?)", x)
 
 
 def thread_table(*x):
-    bind_exec(thread_query, 5, x)
+    bind_exec(cursor, "INSERT INTO threads VALUES (?, ?, ?, ?, ?)", x)
 
 
 def comm_table(*x):
-    bind_exec(comm_query, 5, x)
+    bind_exec(cursor, "INSERT INTO comms VALUES (?, ?, ?, ?, ?)", x)
 
 
 def comm_thread_table(*x):
-    bind_exec(comm_thread_query, 3, x)
+    bind_exec(cursor, "INSERT INTO comm_threads VALUES (?, ?, ?)", x)
 
 
 def dso_table(*x):
-    bind_exec(dso_query, 5, x)
+    bind_exec(cursor, "INSERT INTO dsos VALUES (?, ?, ?, ?, ?)", x)
 
 
 def symbol_table(*x):
-    bind_exec(symbol_query, 6, x)
+    bind_exec(cursor, "INSERT INTO symbols VALUES (?, ?, ?, ?, ?, ?)", x)
 
 
 def branch_type_table(*x):
-    bind_exec(branch_type_query, 2, x)
+    bind_exec(cursor, "INSERT INTO branch_types VALUES (?, ?)", x)
 
 
 def sample_table(*x):
     if branches:
-        for xx in x[0:15]:
-            sample_query.addBindValue(str(xx))
-        for xx in x[19:25]:
-            sample_query.addBindValue(str(xx))
-        do_query_(sample_query)
+        values = x[:15] + x[19:25]
+        cursor.execute(
+            "INSERT INTO samples VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            values,
+        )
     else:
-        bind_exec(sample_query, 25, x)
+        bind_exec(
+            cursor,
+            "INSERT INTO samples VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            x,
+        )
 
 
 def call_path_table(*x):
-    bind_exec(call_path_query, 4, x)
+    bind_exec(cursor, "INSERT INTO call_paths VALUES (?, ?, ?, ?)", x)
 
 
 def call_return_table(*x):
-    bind_exec(call_query, 14, x)
+    bind_exec(
+        cursor, "INSERT INTO calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", x
+    )
 
 
 def ptwrite(id, raw_buf):
@@ -881,10 +869,8 @@ def ptwrite(id, raw_buf):
     flags = data[0]
     payload = data[1]
     exact_ip = flags & 1
-    ptwrite_query.addBindValue(str(id))
-    ptwrite_query.addBindValue(str(payload))
-    ptwrite_query.addBindValue(str(exact_ip))
-    do_query_(ptwrite_query)
+    insert_values = (id, payload, exact_ip)
+    bind_exec(cursor, "INSERT INTO ptwrite VALUES (?, ?, ?)", insert_values)
 
 
 def cbr(id, raw_buf):
@@ -892,11 +878,8 @@ def cbr(id, raw_buf):
     cbr = data[0]
     MHz = (data[4] + 500) / 1000
     percent = ((cbr * 1000 / data[2]) + 5) / 10
-    cbr_query.addBindValue(str(id))
-    cbr_query.addBindValue(str(cbr))
-    cbr_query.addBindValue(str(MHz))
-    cbr_query.addBindValue(str(percent))
-    do_query_(cbr_query)
+    insert_values = (id, cbr, MHz, percent)
+    bind_exec(cursor, "INSERT INTO cbr VALUES (?, ?, ?, ?)", insert_values)
 
 
 def mwait(id, raw_buf):
@@ -904,10 +887,8 @@ def mwait(id, raw_buf):
     payload = data[1]
     hints = payload & 0xFF
     extensions = (payload >> 32) & 0x3
-    mwait_query.addBindValue(str(id))
-    mwait_query.addBindValue(str(hints))
-    mwait_query.addBindValue(str(extensions))
-    do_query_(mwait_query)
+    insert_values = (id, hints, extensions)
+    bind_exec(cursor, "INSERT INTO mwait VALUES (?, ?, ?)", insert_values)
 
 
 def pwre(id, raw_buf):
@@ -916,20 +897,16 @@ def pwre(id, raw_buf):
     hw = (payload >> 7) & 1
     cstate = (payload >> 12) & 0xF
     subcstate = (payload >> 8) & 0xF
-    pwre_query.addBindValue(str(id))
-    pwre_query.addBindValue(str(cstate))
-    pwre_query.addBindValue(str(subcstate))
-    pwre_query.addBindValue(str(hw))
-    do_query_(pwre_query)
+    insert_values = (id, cstate, subcstate, hw)
+    bind_exec(cursor, "INSERT INTO pwre VALUES (?, ?, ?, ?)", insert_values)
 
 
 def exstop(id, raw_buf):
     data = struct.unpack_from("<I", raw_buf)
     flags = data[0]
     exact_ip = flags & 1
-    exstop_query.addBindValue(str(id))
-    exstop_query.addBindValue(str(exact_ip))
-    do_query_(exstop_query)
+    insert_values = (id, exact_ip)
+    bind_exec(cursor, "INSERT INTO exstop VALUES (?, ?)", insert_values)
 
 
 def pwrx(id, raw_buf):
@@ -938,11 +915,8 @@ def pwrx(id, raw_buf):
     deepest_cstate = payload & 0xF
     last_cstate = (payload >> 4) & 0xF
     wake_reason = (payload >> 8) & 0xF
-    pwrx_query.addBindValue(str(id))
-    pwrx_query.addBindValue(str(deepest_cstate))
-    pwrx_query.addBindValue(str(last_cstate))
-    pwrx_query.addBindValue(str(wake_reason))
-    do_query_(pwrx_query)
+    insert_values = (id, deepest_cstate, last_cstate, wake_reason)
+    bind_exec(cursor, "INSERT INTO pwrx VALUES (?, ?, ?, ?)", insert_values)
 
 
 def synth_data(id, config, raw_buf, *x):
@@ -961,4 +935,6 @@ def synth_data(id, config, raw_buf, *x):
 
 
 def context_switch_table(*x):
-    bind_exec(context_switch_query, 9, x)
+    bind_exec(
+        cursor, "INSERT INTO context_switches VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", x
+    )
