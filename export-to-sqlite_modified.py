@@ -1,6 +1,5 @@
 from __future__ import print_function
 
-import os
 import sys
 import struct
 import sqlite3
@@ -847,10 +846,9 @@ def sample_table(*x):
             values,
         )
     else:
-        bind_exec(
-            cursor,
+        cursor.execute(
             "INSERT INTO samples VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            x,
+            x[:25],  
         )
 
 
